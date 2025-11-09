@@ -1,0 +1,104 @@
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+DATABASE_PATH = Path("data/posts.db")
+def _prepare_path(db_path):
+    path = Path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+# init database ( что делает эта функция)
+def init_db(db_path=DATABASE_PATH):
+    db_path = _prepare_path(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                channel_title TEXT,
+                message_id INTEGER NOT NULL,
+                message_text TEXT,
+                message_date TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (channel_id, message_id))""")
+        conn.commit()
+def save_post(channel_id, message_id, message_text, message_date, channel_title=None, db_path=DATABASE_PATH):
+    if isinstance(message_date, datetime):
+        message_date_iso = message_date.isoformat()
+    else:
+        message_date_iso = str(message_date)
+    db_path = _prepare_path(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO posts (channel_id, channel_title, message_id, message_text, message_date)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(channel_id, message_id) DO UPDATE SET
+                channel_title = excluded.channel_title,
+                message_text = excluded.message_text,
+                message_date = excluded.message_date
+            """,
+            (str(channel_id), channel_title, int(message_id), message_text, message_date_iso),
+        )
+        conn.commit()
+def _normalize_keywords(keywords):
+    if isinstance(keywords, str):
+        raw = [keywords]
+    else:
+        raw = list(keywords)
+    cleaned = []
+    for item in raw:
+        if item is None:
+            continue
+        word = str(item).strip()
+        if word:
+            cleaned.append(word)
+    return cleaned
+def search_posts(keywords, limit=20, db_path=DATABASE_PATH):
+    words = _normalize_keywords(keywords)
+    if not words:
+        return []
+    pieces = []
+    for _ in words:
+        pieces.append("LOWER(COALESCE(message_text, '')) LIKE ?")
+    like_values = []
+    for word in words:
+        like_values.append(f"%{word.lower()}%")
+    query = " AND ".join(pieces)
+    db_path = _prepare_path(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            f"""
+            SELECT channel_id, channel_title, message_id, message_text, message_date, created_at
+            FROM posts
+            WHERE {query}
+            ORDER BY message_date DESC
+            LIMIT ?
+            """,
+            (*like_values, limit),
+        )
+        rows = cursor.fetchall()
+        result = []
+        for row in rows:
+            result.append(dict(row))
+        return result
+def get_latest_posts(limit=20, db_path=DATABASE_PATH):
+    db_path = _prepare_path(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            """
+            SELECT channel_id, channel_title, message_id, message_text, message_date, created_at
+            FROM posts
+            ORDER BY message_date DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        data = cursor.fetchall()
+        latest = []
+        for row in data:
+            latest.append(dict(row))
+        return latest
