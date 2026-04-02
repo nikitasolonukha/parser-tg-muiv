@@ -32,6 +32,11 @@ BUTTON_HELP = "ℹ️ Помощь"
 BUTTON_RECENT = "⏱️ Последние"
 BUTTON_CHANNELS = "📚 Каналы"
 BUTTON_STATS = "📊 Статистика"
+BUTTON_SEARCH = "🔍 Поиск в базе"
+BUTTON_ADV_SEARCH = "🔧 Расширенный поиск"
+
+AWAIT_SEARCH = "await_search"
+AWAIT_ADVANCED = "await_advanced"
 
 news_buffer = []
 
@@ -199,38 +204,46 @@ def build_keyboard():
         [
             [BUTTON_UPDATE, BUTTON_LATEST],
             [BUTTON_RECENT, BUTTON_CHANNELS],
+            [BUTTON_SEARCH, BUTTON_ADV_SEARCH],
             [BUTTON_STATS, BUTTON_HELP],
         ],
         resize_keyboard=True,
     )
 
 
-def send_help(update: Update):
+def _clear_await(context: CallbackContext):
+    ud = context.user_data
+    ud.pop(AWAIT_SEARCH, None)
+    ud.pop(AWAIT_ADVANCED, None)
+
+
+def send_help(update: Update, context: CallbackContext):
+    _clear_await(context)
     help_text = (
-        "<b>Привет!</b> Кнопки внизу или команды ниже.\n\n"
-        "<b>Кнопки</b>\n"
-        f"{html.escape(BUTTON_UPDATE)} — забрать новые посты\n"
-        f"{html.escape(BUTTON_LATEST)} — показать свежие записи\n"
-        f"{html.escape(BUTTON_RECENT)} — показать последние посты\n"
-        f"{html.escape(BUTTON_CHANNELS)} — список каналов из базы\n"
-        f"{html.escape(BUTTON_STATS)} — статистика по базе\n\n"
-        "Просто текст в чат — обычный поиск по базе.\n\n"
-        "<b>Команды</b>\n"
-        "<code>/search iphone ai</code>\n"
-        "<code>/advanced_search mode=all sort=relevance limit=7 channel=@tech ai новости</code>\n"
-        "<code>/recent 5</code>\n"
-        "<code>/channels</code>\n"
-        "<code>/stats</code>"
+        "<b>Привет!</b> Удобнее всего — кнопки внизу: обновление, свежие посты, последние, каналы, статистика, поиск.\n\n"
+        "<b>Дополнительно в чат (на английском, как в Telegram)</b>\n\n"
+        "<code>/search</code> — найти посты по словам. "
+        "Дальше через пробел пишешь запрос: бот покажет записи, где есть <b>каждое</b> из слов.\n"
+        "Пример: <code>/search iphone обзор</code>\n\n"
+        "<code>/advanced_search</code> — то же силнее: можно сортировка, лимит и фильтр по каналу. "
+        "Пиши в одном сообщении параметры латиницей и в конце — что искать.\n"
+        "Пример:\n"
+        "<code>/advanced_search mode=any sort=relevance limit=5 нейросеть новости</code>\n"
+        "<code>mode=all</code> — нужны все слова; <code>mode=any</code> — хотя бы одно. "
+        "<code>sort=date</code> — по дате; <code>sort=relevance</code> — по совпадениям. "
+        "<code>limit=7</code> — сколько постов максимум. "
+        "<code>channel=@ник</code> — только этот канал.\n\n"
+        "Также можно нажать «Поиск в базе» или «Расширенный поиск» — бот подскажет, что ввести."
     )
     update.message.reply_text(help_text, parse_mode="HTML", reply_markup=build_keyboard())
 
 
 def start_command(update: Update, context: CallbackContext):
-    send_help(update)
+    send_help(update, context)
 
 
 def help_command(update: Update, context: CallbackContext):
-    send_help(update)
+    send_help(update, context)
 
 
 def _refresh_buffer(limit=SEARCH_RESULT_LIMIT):
@@ -303,9 +316,14 @@ def show_stats(update: Update):
 
 
 def search_command(update: Update, context: CallbackContext):
+    _clear_await(context)
     query = " ".join(context.args).strip()
     if not query:
-        update.message.reply_text("Использование: /search <запрос>")
+        update.message.reply_text(
+            "Команда на английском: <code>/search</code> — потом через пробел слова для поиска. "
+            "Или нажми кнопку «Поиск в базе».",
+            parse_mode="HTML",
+        )
         return
     results = search_posts(query, limit=SEARCH_RESULT_LIMIT)
     if not results:
@@ -316,10 +334,13 @@ def search_command(update: Update, context: CallbackContext):
 
 
 def advanced_search_command(update: Update, context: CallbackContext):
+    _clear_await(context)
     raw = " ".join(context.args).strip()
     if not raw:
         update.message.reply_text(
-            "Использование: /advanced_search mode=all sort=date limit=10 channel=@name текст"
+            "Команда на английском: <code>/advanced_search</code> и в том же сообщении параметры "
+            "(mode=, sort=, limit=, channel=) и текст поиска. Либо нажми «Расширенный поиск».",
+            parse_mode="HTML",
         )
         return
     parsed = parse_advanced_args(raw)
@@ -363,58 +384,153 @@ def perform_update(update: Update):
 
 
 def update_command(update: Update, context: CallbackContext):
+    _clear_await(context)
     perform_update(update)
 
 
 def latest_command(update: Update, context: CallbackContext):
+    _clear_await(context)
     send_latest(update)
 
 
 def recent_command(update: Update, context: CallbackContext):
+    _clear_await(context)
     send_recent(update, context)
 
 
 def channels_command(update: Update, context: CallbackContext):
+    _clear_await(context)
     show_channels(update)
 
 
 def stats_command(update: Update, context: CallbackContext):
+    _clear_await(context)
     show_stats(update)
+
+
+def _prompt_simple_search(update: Update, context: CallbackContext):
+    _clear_await(context)
+    context.user_data[AWAIT_SEARCH] = True
+    msg = (
+        "<b>Поиск по базе</b>\n\n"
+        "Напиши <b>одним сообщением</b> слова, которые должны встретиться в тексте поста. "
+        "Бот найдёт записи, где есть <b>все</b> эти слова (порядок не важен).\n\n"
+        "<b>Пример:</b> <code>новости технологии</code>\n\n"
+        "Чтобы отменить — нажми любую другую кнопку снизу или открой помощь "
+        f"{html.escape(BUTTON_HELP)}."
+    )
+    update.message.reply_text(msg, parse_mode="HTML", reply_markup=build_keyboard())
+
+
+def _prompt_advanced_search(update: Update, context: CallbackContext):
+    _clear_await(context)
+    context.user_data[AWAIT_ADVANCED] = True
+    msg = (
+        "<b>Расширенный поиск</b>\n\n"
+        "Отправь <b>одним сообщением</b> строку: сначала (по желанию) параметры латиницей, "
+        "в конце — что искать.\n\n"
+        "<b>Параметры</b> (можно не все, через пробел):\n"
+        "<code>mode=all</code> — нужны все слова · "
+        "<code>mode=any</code> — достаточно одного\n"
+        "<code>sort=date</code> — новые сверху · "
+        "<code>sort=relevance</code> — сначала самые подходящие\n"
+        "<code>limit=10</code> — максимум постов (число своё)\n"
+        "<code>channel=@ник_канала</code> — только этот канал\n\n"
+        "<b>Пример:</b>\n"
+        "<code>mode=any sort=relevance limit=5 искусственный интеллект</code>\n\n"
+        "Команда <code>/advanced_search</code> не нужна — только эта строка.\n"
+        "Отмена — любая другая кнопка меню или "
+        f"{html.escape(BUTTON_HELP)}."
+    )
+    update.message.reply_text(msg, parse_mode="HTML", reply_markup=build_keyboard())
 
 
 def search_handler(update: Update, context: CallbackContext):
     text = (update.message.text or "").strip()
     if text in {BUTTON_UPDATE, "/update"}:
+        _clear_await(context)
         perform_update(update)
         return
     if text in {BUTTON_LATEST, "/latest"}:
+        _clear_await(context)
         send_latest(update)
         return
     if text in {BUTTON_HELP, "/help"}:
-        send_help(update)
+        send_help(update, context)
         return
     if text in {BUTTON_RECENT, "/recent"}:
+        _clear_await(context)
         send_recent(update, context)
         return
     if text in {BUTTON_CHANNELS, "/channels"}:
+        _clear_await(context)
         show_channels(update)
         return
     if text in {BUTTON_STATS, "/stats"}:
+        _clear_await(context)
         show_stats(update)
         return
+    if text == BUTTON_SEARCH:
+        _prompt_simple_search(update, context)
+        return
+    if text == BUTTON_ADV_SEARCH:
+        _prompt_advanced_search(update, context)
+        return
+    if context.user_data.get(AWAIT_SEARCH):
+        context.user_data.pop(AWAIT_SEARCH, None)
+        if not text:
+            update.message.reply_text("Напиши слова для поиска или нажми другую кнопку.")
+            return
+        results = search_posts(text, limit=SEARCH_RESULT_LIMIT)
+        if not results:
+            update.message.reply_text("Ничего не найдено.")
+            return
+        for post in reversed(results):
+            news_buffer.insert(0, post)
+        while len(news_buffer) > SEARCH_RESULT_LIMIT:
+            news_buffer.pop()
+        w = _split_words(text)
+        send_posts_as_messages(update, results, words=w, header_html="<b>Поиск по базе</b>")
+        return
+    if context.user_data.get(AWAIT_ADVANCED):
+        context.user_data.pop(AWAIT_ADVANCED, None)
+        if not text:
+            update.message.reply_text("Напиши строку с параметрами и словами или нажми другую кнопку.")
+            return
+        parsed = parse_advanced_args(text)
+        words = parsed.get("words") or []
+        if not words:
+            update.message.reply_text("Не вижу слов для поиска. Добавь в конец строки, что искать.")
+            return
+        result = advanced_search_posts(
+            words,
+            mode=parsed.get("mode", "all"),
+            limit=parsed.get("limit", 10),
+            sort=parsed.get("sort", "date"),
+            channel_filter=parsed.get("channel"),
+        )
+        if not result:
+            update.message.reply_text("Ничего не найдено.")
+            return
+        ch = parsed.get("channel") or "—"
+        header = (
+            "<b>Расширенный поиск (по кнопке)</b>\n"
+            f"режим: <code>{html.escape(str(parsed.get('mode')))}</code>, "
+            f"сортировка: <code>{html.escape(str(parsed.get('sort')))}</code>, "
+            f"лимит: <code>{html.escape(str(parsed.get('limit')))}</code>, "
+            f"канал: <code>{html.escape(str(ch))}</code>"
+        )
+        send_posts_as_messages(update, result, words=words, header_html=header)
+        return
     if not text:
-        update.message.reply_text("Введите запрос для поиска.")
+        update.message.reply_text("Выбери действие кнопкой или открой помощь.")
         return
-    results = search_posts(text, limit=SEARCH_RESULT_LIMIT)
-    if not results:
-        update.message.reply_text("Ничего не найдено.")
-        return
-    for post in reversed(results):
-        news_buffer.insert(0, post)
-    while len(news_buffer) > SEARCH_RESULT_LIMIT:
-        news_buffer.pop()
-    w = _split_words(text)
-    send_posts_as_messages(update, results, words=w, header_html="<b>Поиск по тексту</b>")
+    hint = (
+        "Чтобы искать по базе, нажми «Поиск в базе» или «Расширенный поиск» "
+        f"или команду <code>/search</code> / <code>/advanced_search</code>. "
+        f"{html.escape(BUTTON_HELP)} — подсказка."
+    )
+    update.message.reply_text(hint, parse_mode="HTML", reply_markup=build_keyboard())
 
 
 def main():
