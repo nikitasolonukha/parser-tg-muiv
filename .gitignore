@@ -24,7 +24,7 @@ data/
 *.session
 *.session-journal
 
-# Database files (можно исключить, если БД не нужна в репозитории)
+# Database files 
 # data/posts.db
 
 # Environment variables
