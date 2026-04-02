@@ -1,0 +1,14 @@
+.git
+.gitignore
+.cursor
+venv
+.venv
+__pycache__
+*.pyc
+*.pyo
+data
+*.session
+.env
+.env.local
+project_notes.md
+test_db.py

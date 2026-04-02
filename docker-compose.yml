@@ -1,0 +1,12 @@
+services:
+  parser-bot:
+    build: .
+    container_name: parser-bot
+    restart: unless-stopped
+    env_file:
+      - bot.env
+    volumes:
+      # БД (путь по умолчанию в контейнере: /app/data/posts.db)
+      - ./data:/app/data
+      # Сессии Telethon: в bot.env задайте TELEGRAM_SESSION_NAME=/session/имя_сессии
+      - ./session:/session
