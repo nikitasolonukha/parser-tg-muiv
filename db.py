@@ -12,8 +12,8 @@ def _prepare_path(db_path):
 
 
 def _table_has_column(conn, column):
-    cur = conn.execute("PRAGMA table_info(posts)")
-    for row in cur.fetchall():
+    res = conn.execute("PRAGMA table_info(posts)")
+    for row in res.fetchall():
         if row[1] == column:
             return True
     return False
@@ -22,8 +22,7 @@ def _table_has_column(conn, column):
 def init_db(db_path=DATABASE_PATH):
     db_path = _prepare_path(db_path)
     with sqlite3.connect(db_path) as conn:
-        cur = conn.cursor()
-        cur.execute(
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS posts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +38,7 @@ def init_db(db_path=DATABASE_PATH):
             """
         )
         if not _table_has_column(conn, "channel_username"):
-            cur.execute("ALTER TABLE posts ADD COLUMN channel_username TEXT")
+            conn.execute("ALTER TABLE posts ADD COLUMN channel_username TEXT")
         conn.commit()
 
 
@@ -109,7 +108,7 @@ def search_posts(keywords, limit=20, db_path=DATABASE_PATH):
     db_path = _prepare_path(db_path)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
+        res = conn.execute(
             f"""
             SELECT channel_id, channel_title, channel_username, message_id, message_text, message_date, created_at
             FROM posts
@@ -119,7 +118,7 @@ def search_posts(keywords, limit=20, db_path=DATABASE_PATH):
             """,
             (*like_values, limit),
         )
-        rows = cursor.fetchall()
+        rows = res.fetchall()
         result = []
         for row in rows:
             result.append(dict(row))
@@ -130,7 +129,7 @@ def get_latest_posts(limit=20, db_path=DATABASE_PATH):
     db_path = _prepare_path(db_path)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
+        res = conn.execute(
             """
             SELECT channel_id, channel_title, channel_username, message_id, message_text, message_date, created_at
             FROM posts
@@ -139,7 +138,7 @@ def get_latest_posts(limit=20, db_path=DATABASE_PATH):
             """,
             (limit,),
         )
-        data = cursor.fetchall()
+        data = res.fetchall()
         latest = []
         for row in data:
             latest.append(dict(row))
@@ -213,7 +212,7 @@ def advanced_search_posts(
     db_path = _prepare_path(db_path)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
+        res = conn.execute(
             f"""
             SELECT channel_id, channel_title, channel_username, message_id, message_text, message_date, created_at
             FROM posts
@@ -223,7 +222,7 @@ def advanced_search_posts(
             """,
             (*params, lim),
         )
-        rows = cursor.fetchall()
+        rows = res.fetchall()
 
     result = []
     for row in rows:

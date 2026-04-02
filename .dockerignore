@@ -1,6 +1,5 @@
 .git
 .gitignore
-.cursor
 venv
 .venv
 __pycache__

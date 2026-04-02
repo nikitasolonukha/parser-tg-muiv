@@ -1,38 +1,20 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# Virtual environments
-venv/
-env/
-ENV/
-
-# IDE
-.vscode/
-.idea/
-.cursor/
-
-# Локальные данные / БД
-data/
-*.swp
-*.swo
-
-# Telegram session files
-*.session
-*.session-journal
-
-# Database files 
-# data/posts.db
-
-# Environment variables
-.env
-.env.local
-
-# OS
-.DS_Store
-Thumbs.db
-
-
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.vscode/
+.idea/
+.cursor/
+data/
+*.swp
+*.swo
+*.session
+*.session-journal
+.env
+.env.local
+.DS_Store
+Thumbs.db

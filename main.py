@@ -118,7 +118,7 @@ def post_card_html(post, idx=None, words=None):
     rel = post.get("relevance_score")
     parts = []
     if idx is not None:
-        parts.append(f"<b>#{idx}</b> {channel}")
+        parts.append("<b>\u0023" + str(idx) + "</b> " + channel)
     else:
         parts.append(f"<b>{channel}</b>")
     parts.append(f"Дата: <code>{dt}</code>")
