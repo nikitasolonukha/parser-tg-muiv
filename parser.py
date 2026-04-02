@@ -30,10 +30,6 @@ def _message_date(message):
     return message.date.replace(tzinfo=None)
 
 
-
-
-
-
 def fetch_channel_posts(client, channel, limit=100):
     saved = 0
     try:
@@ -43,12 +39,16 @@ def fetch_channel_posts(client, channel, limit=100):
                 continue
             channel_id = message.peer_id.channel_id if message.peer_id else channel
             channel_title = message.chat.title if message.chat else None
+            channel_username = getattr(message.chat, "username", None) if message.chat else None
+            if message.id is None:
+                continue
             save_post(
                 str(channel_id),
                 message.id,
                 message.message,
                 _message_date(message),
                 channel_title,
+                channel_username,
             )
             saved += 1
     except RPCError as error:

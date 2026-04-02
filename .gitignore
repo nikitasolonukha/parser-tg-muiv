@@ -13,6 +13,10 @@ ENV/
 # IDE
 .vscode/
 .idea/
+.cursor/
+
+# Локальные данные / БД
+data/
 *.swp
 *.swo
 
@@ -30,4 +34,5 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
 

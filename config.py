@@ -25,15 +25,22 @@ TELEGRAM_API_HASH: str = _load_str("TELEGRAM_API_HASH", "replace_me")
 TELEGRAM_BOT_TOKEN: str = _load_str("TELEGRAM_BOT_TOKEN", "replace_me")
 
 TELEGRAM_CHANNELS: List[str] = [
+    "@vibecoding_tg",
+    "https://t.me/+N5aWOUQLi0wxODZk",
+    "@killerfeat",
+    "@ne_backup",
+    "@finansist_busines",
+    "@aironzak",
+    "@houstonprotennis",
     "@technomedia",
+    "@chatgptv",
+    "@neural_braining",
+    "@trendswhat",
     "@yaroslavl_smi",
     "@novosti_efir",
-    "@neural_braining",
     "@naebnet",
     "@techmedia",
     "@kharchevnikov",
-    "@trendswhat",
-    "@chatgptv",
 ]
 
 TELEGRAM_FETCH_LIMIT: int = 30

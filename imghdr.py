@@ -26,6 +26,8 @@ def _test_bmp(header):
 
 
 def _test_webp(header):
+    if len(header) < 12:
+        return False
     return header.startswith(b"RIFF") and header[8:12] == b"WEBP"
 
 
@@ -45,6 +47,8 @@ def what(file, header=None):
         else:
             with open(file, "rb") as handle:
                 header = handle.read(32)
+    if not header:
+        return None
     for name, tester in _TESTS:
         if tester(header):
             return name

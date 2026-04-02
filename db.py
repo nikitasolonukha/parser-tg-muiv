@@ -11,6 +11,14 @@ def _prepare_path(db_path):
     return path
 
 
+def _table_has_column(conn, column):
+    cur = conn.execute("PRAGMA table_info(posts)")
+    for row in cur.fetchall():
+        if row[1] == column:
+            return True
+    return False
+
+
 def init_db(db_path=DATABASE_PATH):
     db_path = _prepare_path(db_path)
     with sqlite3.connect(db_path) as conn:
@@ -21,6 +29,7 @@ def init_db(db_path=DATABASE_PATH):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 channel_id TEXT NOT NULL,
                 channel_title TEXT,
+                channel_username TEXT,
                 message_id INTEGER NOT NULL,
                 message_text TEXT,
                 message_date TEXT,
@@ -29,10 +38,20 @@ def init_db(db_path=DATABASE_PATH):
             )
             """
         )
+        if not _table_has_column(conn, "channel_username"):
+            cur.execute("ALTER TABLE posts ADD COLUMN channel_username TEXT")
         conn.commit()
 
 
-def save_post(channel_id, message_id, message_text, message_date, channel_title=None, db_path=DATABASE_PATH):
+def save_post(
+    channel_id,
+    message_id,
+    message_text,
+    message_date,
+    channel_title=None,
+    channel_username=None,
+    db_path=DATABASE_PATH,
+):
     if isinstance(message_date, datetime):
         message_date_iso = message_date.isoformat()
     else:
@@ -41,14 +60,22 @@ def save_post(channel_id, message_id, message_text, message_date, channel_title=
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             """
-            INSERT INTO posts (channel_id, channel_title, message_id, message_text, message_date)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO posts (channel_id, channel_title, channel_username, message_id, message_text, message_date)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(channel_id, message_id) DO UPDATE SET
                 channel_title = excluded.channel_title,
+                channel_username = excluded.channel_username,
                 message_text = excluded.message_text,
                 message_date = excluded.message_date
             """,
-            (str(channel_id), channel_title, int(message_id), message_text, message_date_iso),
+            (
+                str(channel_id),
+                channel_title,
+                channel_username,
+                int(message_id),
+                message_text,
+                message_date_iso,
+            ),
         )
         conn.commit()
 
@@ -84,7 +111,7 @@ def search_posts(keywords, limit=20, db_path=DATABASE_PATH):
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
             f"""
-            SELECT channel_id, channel_title, message_id, message_text, message_date, created_at
+            SELECT channel_id, channel_title, channel_username, message_id, message_text, message_date, created_at
             FROM posts
             WHERE {query}
             ORDER BY message_date DESC
@@ -105,7 +132,7 @@ def get_latest_posts(limit=20, db_path=DATABASE_PATH):
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
             """
-            SELECT channel_id, channel_title, message_id, message_text, message_date, created_at
+            SELECT channel_id, channel_title, channel_username, message_id, message_text, message_date, created_at
             FROM posts
             ORDER BY message_date DESC
             LIMIT ?
@@ -188,7 +215,7 @@ def advanced_search_posts(
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
             f"""
-            SELECT channel_id, channel_title, message_id, message_text, message_date, created_at
+            SELECT channel_id, channel_title, channel_username, message_id, message_text, message_date, created_at
             FROM posts
             WHERE ({text_where}) {channel_sql}
             ORDER BY message_date DESC
@@ -205,7 +232,6 @@ def advanced_search_posts(
         result.append(item)
 
     if normalized_sort == "relevance":
-        # простая топорная релевантность: сначала score, потом дата
         result.sort(key=lambda x: (x.get("relevance_score", 0), x.get("message_date") or ""), reverse=True)
     else:
         result.sort(key=lambda x: x.get("message_date") or "", reverse=True)

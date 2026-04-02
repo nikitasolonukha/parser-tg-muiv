@@ -1,7 +1,8 @@
+import html
 import logging
 from datetime import datetime
 
-from telegram import ReplyKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandler, Updater
 
 from config import (
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 BUTTON_UPDATE = "🔄 Обновить базу"
 BUTTON_LATEST = "📰 Свежие новости"
 BUTTON_HELP = "ℹ️ Помощь"
-BUTTON_RECENT = "⏱ Последние"
+BUTTON_RECENT = "⏱️ Последние"
 BUTTON_CHANNELS = "📚 Каналы"
 BUTTON_STATS = "📊 Статистика"
 
@@ -46,28 +47,6 @@ def _format_date(value):
         return datetime.fromisoformat(value).strftime("%d.%m.%Y %H:%M")
     except ValueError:
         return value
-
-
-def _short_text(text, limit=400):
-    if not text:
-        return "(текст отсутствует)"
-    text = " ".join(text.split())
-    if len(text) > limit:
-        return text[: limit - 1] + "…"
-    return text
-
-
-def format_post(post, index=None):
-    channel = post.get("channel_title") or post.get("channel_id") or "Канал"
-    date_line = _format_date(post.get("message_date"))
-    body = _short_text(post.get("message_text"))
-    prefix = f"{index}. " if index else ""
-    lines = [f"{prefix}{channel}"]
-    if date_line:
-        lines.append(f"Дата: {date_line}")
-    lines.append("—")
-    lines.append(body)
-    return "\n".join(lines)
 
 
 def _make_snippet(text, words=None, limit=160):
@@ -101,24 +80,69 @@ def _make_snippet(text, words=None, limit=160):
     return part
 
 
-def format_search_result(post, idx=None, words=None):
-    channel = post.get("channel_title") or post.get("channel_id") or "Канал"
-    dt = _format_date(post.get("message_date"))
+def post_public_url(post):
     mid = post.get("message_id")
-    txt = post.get("message_text") or ""
-    snippet = _make_snippet(txt, words=words, limit=180)
+    if mid is None:
+        return None
+    try:
+        mid = int(mid)
+    except (TypeError, ValueError):
+        return None
+    un = post.get("channel_username")
+    if un:
+        u = str(un).strip().lstrip("@")
+        if u:
+            return f"https://t.me/{u}/{mid}"
+    cid = post.get("channel_id")
+    if cid is not None and str(cid).strip():
+        cs = str(cid).strip()
+        if cs.isdigit():
+            return f"https://t.me/c/{cs}/{mid}"
+    return None
+
+
+def _post_url_keyboard(url):
+    if not url:
+        return None
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Открыть в Telegram", url=url)]])
+
+
+def post_card_html(post, idx=None, words=None):
+    channel = post.get("channel_title") or post.get("channel_username") or post.get("channel_id") or "Канал"
+    channel = html.escape(str(channel))
+    dt_raw = _format_date(post.get("message_date")) or "?"
+    dt = html.escape(dt_raw)
+    mid = post.get("message_id")
+    snippet_src = _make_snippet(post.get("message_text") or "", words=words, limit=500)
+    snippet = html.escape(snippet_src)
     rel = post.get("relevance_score")
-    top = f"#{idx} " if idx is not None else ""
-    lines = [
-        f"{top}{channel}",
-        f"Дата: {dt}" if dt else "Дата: ?",
-        f"id поста: {mid}",
-        f"Релевантность: {rel}" if rel is not None else "Релевантность: -",
-        "Сниппет:",
-        snippet,
-        "-----",
-    ]
-    return "\n".join(lines)
+    parts = []
+    if idx is not None:
+        parts.append(f"<b>#{idx}</b> {channel}")
+    else:
+        parts.append(f"<b>{channel}</b>")
+    parts.append(f"Дата: <code>{dt}</code>")
+    if mid is not None:
+        parts.append(f"id: <code>{html.escape(str(mid))}</code>")
+    if rel is not None:
+        parts.append(f"Релевантность: <code>{html.escape(str(rel))}</code>")
+    parts.append("")
+    parts.append(snippet)
+    out = "\n".join(parts)
+    if len(out) > 4000:
+        out = out[:3997] + "..."
+    return out
+
+
+def send_posts_as_messages(update: Update, posts, words=None, header_html=None):
+    msg = update.message
+    if header_html:
+        msg.reply_text(header_html, parse_mode="HTML")
+    for i, post in enumerate(posts, 1):
+        text = post_card_html(post, idx=i, words=words)
+        url = post_public_url(post)
+        km = _post_url_keyboard(url)
+        msg.reply_text(text, parse_mode="HTML", reply_markup=km)
 
 
 def _split_words(text):
@@ -131,7 +155,6 @@ def _split_words(text):
 
 
 def parse_advanced_args(text):
-    # максимально простой парсер: mode=.. sort=.. limit=.. channel=.. query...
     mode = "all"
     sort = "date"
     limit = 10
@@ -184,20 +207,22 @@ def build_keyboard():
 
 def send_help(update: Update):
     help_text = (
-        "Привет! Используй кнопки или команды.\n"
-        f"{BUTTON_UPDATE} — забрать новые посты\n"
-        f"{BUTTON_LATEST} — показать свежие записи\n"
-        f"{BUTTON_RECENT} — показать последние посты\n"
-        f"{BUTTON_CHANNELS} — список каналов из базы\n"
-        f"{BUTTON_STATS} — статистика по базе\n"
-        "Обычный текст — простой поиск.\n"
-        "/search iphone ai\n"
-        "/advanced_search mode=all sort=relevance limit=7 channel=@tech ai новости\n"
-        "/recent 5\n"
-        "/channels\n"
-        "/stats"
+        "<b>Привет!</b> Кнопки внизу или команды ниже.\n\n"
+        "<b>Кнопки</b>\n"
+        f"{html.escape(BUTTON_UPDATE)} — забрать новые посты\n"
+        f"{html.escape(BUTTON_LATEST)} — показать свежие записи\n"
+        f"{html.escape(BUTTON_RECENT)} — показать последние посты\n"
+        f"{html.escape(BUTTON_CHANNELS)} — список каналов из базы\n"
+        f"{html.escape(BUTTON_STATS)} — статистика по базе\n\n"
+        "Просто текст в чат — обычный поиск по базе.\n\n"
+        "<b>Команды</b>\n"
+        "<code>/search iphone ai</code>\n"
+        "<code>/advanced_search mode=all sort=relevance limit=7 channel=@tech ai новости</code>\n"
+        "<code>/recent 5</code>\n"
+        "<code>/channels</code>\n"
+        "<code>/stats</code>"
     )
-    update.message.reply_text(help_text, reply_markup=build_keyboard())
+    update.message.reply_text(help_text, parse_mode="HTML", reply_markup=build_keyboard())
 
 
 def start_command(update: Update, context: CallbackContext):
@@ -219,8 +244,7 @@ def send_latest(update: Update):
     if not news_buffer:
         update.message.reply_text("Буфер пуст. Сначала обновите базу.")
         return
-    message = "\n\n".join(format_post(post, index=i + 1) for i, post in enumerate(news_buffer))
-    update.message.reply_text(message)
+    send_posts_as_messages(update, news_buffer, words=None, header_html="<b>Свежие из буфера</b>")
 
 
 def send_recent(update: Update, context: CallbackContext):
@@ -238,10 +262,7 @@ def send_recent(update: Update, context: CallbackContext):
     if not recent:
         update.message.reply_text("Пока нет постов в базе.")
         return
-    chunks = []
-    for i, post in enumerate(recent, 1):
-        chunks.append(format_search_result(post, idx=i))
-    update.message.reply_text("\n".join(chunks))
+    send_posts_as_messages(update, recent, words=None, header_html=f"<b>Последние посты</b> (до {lim})")
 
 
 def show_channels(update: Update):
@@ -291,10 +312,7 @@ def search_command(update: Update, context: CallbackContext):
         update.message.reply_text("Ничего не найдено.")
         return
     words = _split_words(query)
-    blocks = []
-    for i, post in enumerate(results, 1):
-        blocks.append(format_search_result(post, idx=i, words=words))
-    update.message.reply_text("\n".join(blocks))
+    send_posts_as_messages(update, results, words=words, header_html="<b>Поиск /search</b>")
 
 
 def advanced_search_command(update: Update, context: CallbackContext):
@@ -319,15 +337,15 @@ def advanced_search_command(update: Update, context: CallbackContext):
     if not result:
         update.message.reply_text("Ничего не найдено по advanced_search.")
         return
+    ch = parsed.get("channel") or "-"
     header = (
-        f"Результаты advanced_search: mode={parsed.get('mode')} "
-        f"sort={parsed.get('sort')} limit={parsed.get('limit')} "
-        f"channel={parsed.get('channel') or '-'}"
+        "<b>Расширенный поиск</b>\n"
+        f"mode: <code>{html.escape(str(parsed.get('mode')))}</code> · "
+        f"sort: <code>{html.escape(str(parsed.get('sort')))}</code> · "
+        f"limit: <code>{html.escape(str(parsed.get('limit')))}</code>\n"
+        f"channel: <code>{html.escape(str(ch))}</code>"
     )
-    blocks = [header, ""]
-    for i, post in enumerate(result, 1):
-        blocks.append(format_search_result(post, idx=i, words=words))
-    update.message.reply_text("\n".join(blocks))
+    send_posts_as_messages(update, result, words=words, header_html=header)
 
 
 def perform_update(update: Update):
@@ -395,8 +413,8 @@ def search_handler(update: Update, context: CallbackContext):
         news_buffer.insert(0, post)
     while len(news_buffer) > SEARCH_RESULT_LIMIT:
         news_buffer.pop()
-    message = "\n\n".join(format_post(post, index=i + 1) for i, post in enumerate(results))
-    update.message.reply_text(message)
+    w = _split_words(text)
+    send_posts_as_messages(update, results, words=w, header_html="<b>Поиск по тексту</b>")
 
 
 def main():
