@@ -30,6 +30,17 @@ def _message_date(message):
     return message.date.replace(tzinfo=None)
 
 
+def _message_body_text(message):
+    for name in ("raw_text", "message", "text"):
+        val = getattr(message, name, None)
+        if val is None:
+            continue
+        s = str(val)
+        if s.strip():
+            return s
+    return ""
+
+
 def fetch_channel_posts(client, channel, limit=100):
     saved = 0
     try:
@@ -45,7 +56,7 @@ def fetch_channel_posts(client, channel, limit=100):
             save_post(
                 str(channel_id),
                 message.id,
-                message.message,
+                _message_body_text(message),
                 _message_date(message),
                 channel_title,
                 channel_username,

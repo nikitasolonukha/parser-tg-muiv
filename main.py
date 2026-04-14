@@ -38,6 +38,8 @@ BUTTON_ADV_SEARCH = "🔧 Расширенный поиск"
 AWAIT_SEARCH = "await_search"
 AWAIT_ADVANCED = "await_advanced"
 
+SNIPPET_EMPTY_FALLBACK = "У поста нет текстовой части. Откройте его в Telegram."
+
 news_buffer = []
 
 
@@ -55,9 +57,10 @@ def _format_date(value):
 
 
 def _make_snippet(text, words=None, limit=160):
-    if not text:
-        return "(пусто)"
-    source = " ".join(str(text).split())
+    base = "" if text is None else str(text)
+    if not base.strip():
+        return SNIPPET_EMPTY_FALLBACK
+    source = " ".join(base.split())
     if not words:
         if len(source) <= limit:
             return source
@@ -118,8 +121,14 @@ def post_card_html(post, idx=None, words=None):
     dt_raw = _format_date(post.get("message_date")) or "?"
     dt = html.escape(dt_raw)
     mid = post.get("message_id")
-    snippet_src = _make_snippet(post.get("message_text") or "", words=words, limit=500)
-    snippet = html.escape(snippet_src)
+    raw_text = post.get("message_text")
+    base = "" if raw_text is None else str(raw_text)
+    body_empty = not base.strip()
+    snippet_src = _make_snippet(raw_text, words=words, limit=500)
+    if body_empty:
+        snippet = "<i>" + html.escape(snippet_src) + "</i>"
+    else:
+        snippet = html.escape(snippet_src)
     rel = post.get("relevance_score")
     parts = []
     if idx is not None:
@@ -220,20 +229,34 @@ def _clear_await(context: CallbackContext):
 def send_help(update: Update, context: CallbackContext):
     _clear_await(context)
     help_text = (
-        "<b>Привет!</b> Удобнее всего — кнопки внизу: обновление, свежие посты, последние, каналы, статистика, поиск.\n\n"
-        "<b>Дополнительно в чат (на английском, как в Telegram)</b>\n\n"
-        "<code>/search</code> — найти посты по словам. "
-        "Дальше через пробел пишешь запрос: бот покажет записи, где есть <b>каждое</b> из слов.\n"
-        "Пример: <code>/search iphone обзор</code>\n\n"
-        "<code>/advanced_search</code> — то же силнее: можно сортировка, лимит и фильтр по каналу. "
-        "Пиши в одном сообщении параметры латиницей и в конце — что искать.\n"
-        "Пример:\n"
-        "<code>/advanced_search mode=any sort=relevance limit=5 нейросеть новости</code>\n"
-        "<code>mode=all</code> — нужны все слова; <code>mode=any</code> — хотя бы одно. "
-        "<code>sort=date</code> — по дате; <code>sort=relevance</code> — по совпадениям. "
-        "<code>limit=7</code> — сколько постов максимум. "
-        "<code>channel=@ник</code> — только этот канал.\n\n"
-        "Также можно нажать «Поиск в базе» или «Расширенный поиск» — бот подскажет, что ввести."
+        "<b>Привет!</b> Этот бот хранит посты из каналов и помогает их искать.\n\n"
+        "<b>Что можно через кнопки</b>\n"
+        f"{html.escape(BUTTON_UPDATE)} — подтянуть новые посты в базу.\n"
+        f"{html.escape(BUTTON_LATEST)} — свежие из буфера.\n"
+        f"{html.escape(BUTTON_RECENT)} — последние записи из базы.\n"
+        f"{html.escape(BUTTON_CHANNELS)} — список каналов.\n"
+        f"{html.escape(BUTTON_STATS)} — статистика.\n"
+        f"{html.escape(BUTTON_SEARCH)} и {html.escape(BUTTON_ADV_SEARCH)} — поиск "
+        "(бот попросит строку запроса).\n"
+        f"{html.escape(BUTTON_HELP)} — эта подсказка.\n\n"
+        "<b>Команды</b> <i>(в чате, как в Telegram)</i>\n"
+        "<code>/start</code> · <code>/help</code> — помощь\n"
+        "<code>/update</code> — обновить базу\n"
+        "<code>/latest</code> — свежие из буфера\n"
+        "<code>/recent</code> — последние посты\n"
+        "<code>/channels</code> — каналы\n"
+        "<code>/stats</code> — статистика\n"
+        "<code>/search</code> <i>слова…</i> — поиск по всем словам сразу\n"
+        "<code>/advanced_search</code> <i>параметры и слова…</i> — расширенный поиск\n\n"
+        "<b>Примеры</b>\n"
+        "<code>/search новости технологии</code>\n"
+        "<code>/advanced_search mode=any sort=relevance limit=5 нейросеть новости</code>\n\n"
+        "<b>Параметры advanced_search</b> <i>(латиницей, через пробел с запросом)</i>\n"
+        "<code>mode=all</code> — нужны все слова · <code>mode=any</code> — хотя бы одно\n"
+        "<code>sort=date</code> — по дате · <code>sort=relevance</code> — по совпадениям\n"
+        "<code>limit=10</code> — сколько постов максимум\n"
+        "<code>channel=@username</code> — только этот канал\n\n"
+        "<i>Удобно и кнопками, и командами — как привычнее.</i>"
     )
     update.message.reply_text(help_text, parse_mode="HTML", reply_markup=build_keyboard())
 
@@ -257,7 +280,7 @@ def send_latest(update: Update):
     if not news_buffer:
         update.message.reply_text("Буфер пуст. Сначала обновите базу.")
         return
-    send_posts_as_messages(update, news_buffer, words=None, header_html="<b>Свежие из буфера</b>")
+    send_posts_as_messages(update, news_buffer, words=None, header_html="<b>Свежие новости</b>\n<i>Из буфера.</i>")
 
 
 def send_recent(update: Update, context: CallbackContext):
@@ -275,22 +298,35 @@ def send_recent(update: Update, context: CallbackContext):
     if not recent:
         update.message.reply_text("Пока нет постов в базе.")
         return
-    send_posts_as_messages(update, recent, words=None, header_html=f"<b>Последние посты</b> (до {lim})")
+    send_posts_as_messages(
+        update,
+        recent,
+        words=None,
+        header_html=f"<b>Последние посты</b>\n<i>До {lim} записей.</i>",
+    )
 
 
 def show_channels(update: Update):
     channels = get_channels()
     if not channels:
-        update.message.reply_text("Каналы в базе не найдены.")
+        update.message.reply_text("<b>Каналы</b>\n\nВ базе пока нет каналов.", parse_mode="HTML")
         return
-    lines = ["Каналы в базе:"]
+    lines = ["<b>Каналы в базе</b>", ""]
     i = 1
     for ch in channels:
-        title = ch.get("channel_title") or "-"
-        cid = ch.get("channel_id") or "-"
-        lines.append(f"{i}) {title} ({cid})")
+        title = ch.get("channel_title") or "—"
+        cid = ch.get("channel_id") or "—"
+        title_esc = html.escape(str(title))
+        cid_esc = html.escape(str(cid))
+        un = ch.get("channel_username")
+        user_line = ""
+        if un and str(un).strip():
+            u = str(un).strip().lstrip("@")
+            user_line = f" · <code>@{html.escape(u)}</code>"
+        lines.append(f"{i}. <b>{title_esc}</b>{user_line}")
+        lines.append(f"   id: <code>{cid_esc}</code>")
         i += 1
-    update.message.reply_text("\n".join(lines))
+    update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
 def show_stats(update: Update):
@@ -299,20 +335,23 @@ def show_stats(update: Update):
     channels = stats.get("channels", [])
     per_channel = stats.get("posts_per_channel", [])
     last_date = _format_date(stats.get("last_post_date"))
-    lines = []
-    lines.append("Статистика базы")
-    lines.append(f"Всего постов: {total}")
-    lines.append(f"Количество каналов: {len(channels)}")
-    lines.append(f"Последняя дата поста: {last_date or '-'}")
-    lines.append("")
-    lines.append("По каналам:")
+    lines = [
+        "<b>Статистика базы</b>",
+        "",
+        f"Всего постов: <b>{total}</b>",
+        f"Каналов: <b>{len(channels)}</b>",
+        f"Последний пост: <code>{html.escape(last_date or '—')}</code>",
+        "",
+        "<b>По каналам</b>",
+    ]
     for row in per_channel[:20]:
         name = row.get("channel_title") or row.get("channel_id") or "?"
         count = row.get("posts_count", 0)
-        lines.append(f"- {name}: {count}")
+        name_esc = html.escape(str(name))
+        lines.append(f"• {name_esc}: <code>{count}</code>")
     if not per_channel:
-        lines.append("- пусто")
-    update.message.reply_text("\n".join(lines))
+        lines.append("<i>Разбивки по каналам пока нет.</i>")
+    update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
 def search_command(update: Update, context: CallbackContext):
@@ -320,17 +359,19 @@ def search_command(update: Update, context: CallbackContext):
     query = " ".join(context.args).strip()
     if not query:
         update.message.reply_text(
-            "Команда на английском: <code>/search</code> — потом через пробел слова для поиска. "
-            "Или нажми кнопку «Поиск в базе».",
+            "Укажите запрос: <code>/search</code> и через пробел слова. "
+            "Или нажмите «Поиск в базе».",
             parse_mode="HTML",
         )
         return
     results = search_posts(query, limit=SEARCH_RESULT_LIMIT)
     if not results:
-        update.message.reply_text("Ничего не найдено.")
+        update.message.reply_text(
+            "По этому запросу ничего не нашлось. Попробуйте другие слова или обновите базу.",
+        )
         return
     words = _split_words(query)
-    send_posts_as_messages(update, results, words=words, header_html="<b>Поиск /search</b>")
+    send_posts_as_messages(update, results, words=words, header_html="<b>Поиск</b>\n<i><code>/search</code></i>")
 
 
 def advanced_search_command(update: Update, context: CallbackContext):
@@ -338,8 +379,9 @@ def advanced_search_command(update: Update, context: CallbackContext):
     raw = " ".join(context.args).strip()
     if not raw:
         update.message.reply_text(
-            "Команда на английском: <code>/advanced_search</code> и в том же сообщении параметры "
-            "(mode=, sort=, limit=, channel=) и текст поиска. Либо нажми «Расширенный поиск».",
+            "В одном сообщении: <code>/advanced_search</code>, параметры "
+            "<code>mode=</code> <code>sort=</code> <code>limit=</code> <code>channel=</code> "
+            "и текст поиска. Или кнопка «Расширенный поиск».",
             parse_mode="HTML",
         )
         return
@@ -356,7 +398,9 @@ def advanced_search_command(update: Update, context: CallbackContext):
         channel_filter=parsed.get("channel"),
     )
     if not result:
-        update.message.reply_text("Ничего не найдено по advanced_search.")
+        update.message.reply_text(
+            "По расширенному поиску ничего не нашлось. Измените слова, режим или фильтр канала.",
+        )
         return
     ch = parsed.get("channel") or "-"
     header = (
@@ -483,14 +527,16 @@ def search_handler(update: Update, context: CallbackContext):
             return
         results = search_posts(text, limit=SEARCH_RESULT_LIMIT)
         if not results:
-            update.message.reply_text("Ничего не найдено.")
+            update.message.reply_text(
+                "По этому запросу ничего не нашлось. Попробуйте другие слова или обновите базу.",
+            )
             return
         for post in reversed(results):
             news_buffer.insert(0, post)
         while len(news_buffer) > SEARCH_RESULT_LIMIT:
             news_buffer.pop()
         w = _split_words(text)
-        send_posts_as_messages(update, results, words=w, header_html="<b>Поиск по базе</b>")
+        send_posts_as_messages(update, results, words=w, header_html="<b>Поиск по базе</b>\n<i>Все слова из запроса.</i>")
         return
     if context.user_data.get(AWAIT_ADVANCED):
         context.user_data.pop(AWAIT_ADVANCED, None)
@@ -510,7 +556,9 @@ def search_handler(update: Update, context: CallbackContext):
             channel_filter=parsed.get("channel"),
         )
         if not result:
-            update.message.reply_text("Ничего не найдено.")
+            update.message.reply_text(
+                "По расширенному поиску ничего не нашлось. Измените слова, режим или фильтр канала.",
+            )
             return
         ch = parsed.get("channel") or "—"
         header = (
@@ -523,7 +571,7 @@ def search_handler(update: Update, context: CallbackContext):
         send_posts_as_messages(update, result, words=words, header_html=header)
         return
     if not text:
-        update.message.reply_text("Выбери действие кнопкой или открой помощь.")
+        update.message.reply_text("Выберите действие кнопкой ниже или откройте помощь.")
         return
     hint = (
         "Чтобы искать по базе, нажми «Поиск в базе» или «Расширенный поиск» "

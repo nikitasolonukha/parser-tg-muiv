@@ -244,7 +244,7 @@ def get_channels(db_path=DATABASE_PATH):
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
-            SELECT channel_id, channel_title
+            SELECT channel_id, channel_title, MAX(channel_username) AS channel_username
             FROM posts
             GROUP BY channel_id, channel_title
             ORDER BY COALESCE(channel_title, channel_id) ASC
